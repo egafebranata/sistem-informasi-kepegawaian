@@ -15,7 +15,7 @@ switch ($method) {
     if (isset($_GET['id'])) {
         // Ambil satu data berdasarkan id
         $id = $_GET['id'];
-        $stmt = $koneksi->prepare("SELECT id, nip, nama_lengkap, jenis_kelamin, jabatan_id, skpd_id, unit_kerja_id, nama_golongan, nama_pangkat, alamat_lengkap FROM pegawai WHERE id = ?");
+        $stmt = $koneksi->prepare("SELECT id, nip, nama_lengkap, jenis_kelamin, jabatan, skpd, unit_kerja, nama_golongan, nama_pangkat, alamat_lengkap FROM pegawai JOIN jabatan ON pegawai.jabatan = jabatan.idwhere WHERE pegawai.id = $id");
         $stmt->bind_param("i", $id);
         $stmt->execute();
         $result = $stmt->get_result();
@@ -29,7 +29,7 @@ switch ($method) {
         }
     } else {
         // Ambil semua data
-        $result = $koneksi->query("SELECT id, nip, nama_lengkap, jenis_kelamin, jabatan_id, skpd_id, unit_kerja_id, nama_golongan, nama_pangkat, alamat_lengkap FROM pegawai");
+        $result = $koneksi->query("SELECT id, nip, nama_lengkap, jenis_kelamin, jabatan, skpd, unit_kerja, nama_golongan, nama_pangkat, alamat_lengkap FROM pegawai");
         $data = [];
         while ($row = $result->fetch_assoc()) {
             $data[] = $row;
@@ -40,7 +40,7 @@ switch ($method) {
 
     case "POST":
     // Cek semua field wajib
-    $fields = ["nip", "nama_lengkap", "jenis_kelamin", "jabatan_id", "skpd_id", "unit_kerja_id", "nama_golongan", "nama_pangkat", "alamat_lengkap"];
+    $fields = ["nip", "nama_lengkap", "jenis_kelamin", "jabatan", "skpd", "unit_kerja", "nama_golongan", "nama_pangkat", "alamat_lengkap"];
     foreach ($fields as $f) {
         if (!isset($_POST[$f])) {
             http_response_code(400);
@@ -53,18 +53,18 @@ switch ($method) {
     $nip             = $_POST['nip'];
     $nama_lengkap    = $_POST['nama_lengkap'];
     $jenis_kelamin   = $_POST['jenis_kelamin'];
-    $jabatan_id      = $_POST['jabatan_id'];
-    $skpd_id         = $_POST['skpd_id'];
-    $unit_kerja_id    = $_POST['unit_kerja_id'];
+    $jabatan         = $_POST['jabatan'];
+    $skpd            = $_POST['skpd'];
+    $unit_kerja      = $_POST['unit_kerja'];
     $nama_golongan   = $_POST['nama_golongan'];
     $nama_pangkat    = $_POST['nama_pangkat'];
     $alamat_lengkap  = $_POST['alamat_lengkap'];
 
     // Query insert
-    $stmt = $koneksi->prepare("INSERT INTO pegawai (nip, nama_lengkap, jenis_kelamin, jabatan_id, skpd_id, unit_kerja_id, nama_golongan, nama_pangkat, alamat_lengkap) 
+    $stmt = $koneksi->prepare("INSERT INTO pegawai (nip, nama_lengkap, jenis_kelamin, jabatan, skpd, unit_kerja, nama_golongan, nama_pangkat, alamat_lengkap) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
     
-    $stmt->bind_param("issiiisss", $nip, $nama_lengkap, $jenis_kelamin, $jabatan_id, $skpd_id, $unit_kerja_id, $nama_golongan, $nama_pangkat, $alamat_lengkap);
+    $stmt->bind_param("issiiisss", $nip, $nama_lengkap, $jenis_kelamin, $jabatan, $skpd, $unit_kerja, $nama_golongan, $nama_pangkat, $alamat_lengkap);
 
     if ($stmt->execute()) {
         echo json_encode([
@@ -74,9 +74,9 @@ switch ($method) {
                 "nip" => $nip,
                 "nama_lengkap" => $nama_lengkap,
                 "jenis_kelamin" => $jenis_kelamin,
-                "jabatan_id" => $jabatan_id,
-                "skpd_id" => $skpd_id,
-                "unit_kerja_id" => $unit_kerja_id,
+                "jabatan" => $jabatan,
+                "skpd" => $skpd,
+                "unit_kerja" => $unit_kerja,
                 "nama_golongan" => $nama_golongan,
                 "nama_pangkat" => $nama_pangkat,
                 "alamat_lengkap" => $alamat_lengkap
