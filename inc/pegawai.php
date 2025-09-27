@@ -1,189 +1,188 @@
 <?php
-header("Content-Type: application/json");
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header('Content-Type: application/json');
 
-// Koneksi database
-$koneksi = new mysqli("localhost", "root", "","belajardb");
-if ($koneksi->connect_error) {
-    die(json_encode(["error" => "Koneksi gagal: " . $koneksi->connect_error]));
+// --- Koneksi database ---
+$host = 'localhost';
+$db   = 'belajardb'; // ganti sesuai database
+$user = 'root';
+$pass = '';
+$charset = 'utf8mb4';
+
+$dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+$options = [
+    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
+];
+
+try {
+    $pdo = new PDO($dsn, $user, $pass, $options);
+} catch (PDOException $e) {
+    http_response_code(500);
+    echo json_encode(["error"=>"Database connection failed: ".$e->getMessage()]);
+    exit;
 }
 
-// Ambil method HTTP
+// --- Ambil method ---
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-
-switch ($method) {
-    case "GET":
-    if (isset($_GET['id'])) {
-        // Ambil satu data berdasarkan id
-        $id = $_GET['id'];
-        $stmt = $koneksi->prepare("SELECT id, nip, nama_lengkap, jenis_kelamin, jabatan, skpd, unit_kerja, nama_golongan, nama_pangkat, alamat_lengkap FROM pegawai JOIN jabatan ON pegawai.jabatan = jabatan.idwhere
-        WHERE pegawai.id = $id");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $data = $result->fetch_assoc();
-
-        if ($data) {
-            echo json_encode($data);
-        } else {
-            http_response_code(404);
-            echo json_encode(["error" => "Data tidak ditemukan"]);
-        }
-    } else {
-        // Ambil semua data
-        $result = $koneksi->query("SELECT id, nip, nama_lengkap, jenis_kelamin, jabatan, skpd, unit_kerja, nama_golongan, nama_pangkat, alamat_lengkap FROM pegawai");
-        $data = [];
-        while ($row = $result->fetch_assoc()) {
-            $data[] = $row;
-        }
-        echo json_encode($data);
-    }
-    break;
-
-   case "POST":
-   if ($_SERVER['REQUEST_METHOD'] === "POST") {
-
-    // Daftar field wajib
-    $fields = ["nip", "nama_lengkap", "jenis_kelamin", "jabatan", "skpd", "unit_kerja", "nama_golongan", "nama_pangkat", "alamat_lengkap"];
-
-    // Ambil Content-Type
-    $contentType = $_SERVER["CONTENT_TYPE"] ?? '';
-
-    // Cek apakah JSON
-    if (stripos($contentType, "application/json") !== false) {
-        $raw = file_get_contents("php://input");
-        $data = json_decode($raw, true);
-
-        if ($data === null) {
-        http_response_code(400);
-        echo json_encode([
-        "error"      => "JSON tidak valid",
-        "raw"        => $raw,                     // <-- koma di sini
-        "json_error" => json_last_error_msg()     // <-- gunakan =>
+$allowedMethods = ['GET','POST','PUT','DELETE'];
+if(!in_array($method, $allowedMethods)){
+    http_response_code(405);
+    echo json_encode([
+        "error"=>"Method not allowed",
+        "method_received"=>$method,
+        "instruction"=>"Gunakan GET, POST, PUT, DELETE"
     ]);
     exit;
 }
-    } else {
-        // Default: ambil dari POST (x-www-form-urlencoded)
-        $data = $_POST;
-    }
 
-    // Debug kalau masih error
-    // echo json_encode(["debug_data" => $data]); exit;
+// --- Ambil Content-Type ---
+$contentType = $_SERVER["CONTENT_TYPE"] ?? '';
 
-    // Validasi field wajib
-    foreach ($fields as $f) {
-        if (!isset($data[$f]) || $data[$f] === '') {
+// --- Fungsi ambil data request ---
+function getRequestData($contentType){
+    if(stripos($contentType,'application/json')!==false){
+        $raw = file_get_contents("php://input");
+        $data = json_decode($raw,true);
+        if($data===null && json_last_error()!==JSON_ERROR_NONE){
             http_response_code(400);
-            echo json_encode(["error" => "Field '$f' wajib diisi"]);
+            echo json_encode([
+                "error"=>"JSON tidak valid",
+                "raw"=>$raw,
+                "json_error"=>json_last_error_msg()
+            ]);
+            exit;
+        }
+        return $data;
+    } elseif(stripos($contentType,'application/x-www-form-urlencoded')!==false){
+        parse_str(file_get_contents("php://input"), $data);
+        return $data;
+    } else {
+        return [];
+    }
+}
+
+// --- Field wajib ---
+$requiredFields = ['nip','nama_lengkap','jenis_kelamin','jabatan','skpd','unit_kerja','nama_golongan','nama_pangkat','alamat_lengkap'];
+
+// --- Ambil data untuk POST/PUT/DELETE ---
+$data = in_array($method,['POST','PUT','DELETE']) ? getRequestData($contentType) : [];
+
+// --- Validasi field wajib POST & PUT ---
+if(in_array($method,['POST','PUT'])){
+    foreach($requiredFields as $field){
+        if(!isset($data[$field]) || trim($data[$field])===''){
+            http_response_code(400);
+            echo json_encode(["error"=>"Field '$field' wajib diisi"]);
             exit;
         }
     }
-
-    // Ambil data
-    $nip            = $data['nip'];
-    $nama_lengkap   = $data['nama_lengkap'];
-    $jenis_kelamin  = $data['jenis_kelamin'];
-    $jabatan        = $data['jabatan'];
-    $skpd           = $data['skpd'];
-    $unit_kerja     = $data['unit_kerja'];
-    $nama_golongan  = $data['nama_golongan'];
-    $nama_pangkat   = $data['nama_pangkat'];
-    $alamat_lengkap = $data['alamat_lengkap'];
-
-    // Query insert
-    $stmt = $koneksi->prepare("INSERT INTO pegawai 
-        (nip, nama_lengkap, jenis_kelamin, jabatan, skpd, unit_kerja, nama_golongan, nama_pangkat, alamat_lengkap) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-
-    $stmt->bind_param(
-        "issssssss",
-        $nip,
-        $nama_lengkap,
-        $jenis_kelamin,
-        $jabatan,
-        $skpd,
-        $unit_kerja,
-        $nama_golongan,
-        $nama_pangkat,
-        $alamat_lengkap
-    );
-
-    if ($stmt->execute()) {
-        echo json_encode([
-            "message" => "Data berhasil ditambahkan",
-            "id" => $koneksi->insert_id,
-            "data" => $data
-        ]);
-    } else {
-        http_response_code(500);
-        echo json_encode(["error" => "Gagal menambahkan data"]);
-    }
-
-} else {
-    http_response_code(405);
-    echo json_encode(["error" => "Method tidak diizinkan"]);
 }
-    break;
 
-    // -------------------- UPDATE (PUT) --------------------
-case "PUT":
-    // Ambil data dari params (query string)
-    if (!isset($_GET['id']) || !isset($_GET['jabatan'])) {
-        http_response_code(400);
-        echo json_encode(["error" => "Field 'id' dan 'jabatan' wajib diisi"]);
-        exit;
+// --- CRUD ---
+try{
+    switch($method){
+        case 'GET':
+            $id = $_GET['id'] ?? null;
+            if($id){
+                $stmt = $pdo->prepare("
+                    SELECT pegawai.id, pegawai.nip, pegawai.nama_lengkap, pegawai.jenis_kelamin, jabatan.jabatan,
+                           skpd.skpd, unit_kerja.unit_kerja,
+                           pegawai.nama_golongan, pegawai.nama_pangkat, pegawai.alamat_lengkap
+                    FROM pegawai
+                    LEFT JOIN jabatan ON pegawai.jabatan = jabatan.id
+                    LEFT JOIN skpd ON pegawai.skpd = skpd.id
+                    LEFT JOIN unit_kerja ON pegawai.unit_kerja = unit_kerja.id
+                    WHERE pegawai.nip = ?
+                ");
+                $stmt->execute([$id]);
+                $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                if($row){
+                    echo json_encode(["success"=>true,"data"=>$row]);
+                } else {
+                    http_response_code(404);
+                    echo json_encode(["error"=>"Data dengan ID $id tidak ditemukan"]);
+                }
+            } else {
+                $stmt = $pdo->query("
+                    SELECT pegawai.id, pegawai.nip, pegawai.nama_lengkap, pegawai.jenis_kelamin, jabatan.jabatan,
+                           skpd.skpd, unit_kerja.unit_kerja,
+                           pegawai.nama_golongan, pegawai.nama_pangkat, pegawai.alamat_lengkap
+                    FROM pegawai
+                    LEFT JOIN jabatan ON pegawai.jabatan = jabatan.id
+                    LEFT JOIN skpd ON pegawai.skpd = skpd.id
+                    LEFT JOIN unit_kerja ON pegawai.unit_kerja = unit_kerja.id
+                ");
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                echo json_encode(["success"=>true,"data"=>$rows]);
+            }
+            break;
+
+        case 'POST':
+            $fields = implode(",", $requiredFields);
+            $placeholders = implode(",", array_fill(0,count($requiredFields),"?"));
+            $stmt = $pdo->prepare("INSERT INTO pegawai ($fields) VALUES ($placeholders)");
+            $stmt->execute(array_map(fn($f)=>$data[$f], $requiredFields));
+
+            // Ambil data dengan FK
+            $stmt2 = $pdo->prepare("
+            SELECT p.id, p.nip, p.nama_lengkap, p.jenis_kelamin,
+            j.jabatan, s.skpd, u.unit_kerja,
+            p.nama_golongan, p.nama_pangkat, p.alamat_lengkap
+            FROM pegawai p
+            LEFT JOIN jabatan j ON p.jabatan = j.id
+            LEFT JOIN skpd s ON p.skpd = s.id
+            LEFT JOIN unit_kerja u ON p.unit_kerja = u.id
+            WHERE p.nip = ?
+            ");
+            $stmt2->execute([$data['nip']]);
+            $row = $stmt2->fetch();
+
+            echo json_encode(["success"=>true,"added"=>$row]);
+            break;
+
+        case 'PUT':
+            $setStr = implode(",", array_map(fn($f)=>"$f=?", $requiredFields));
+            $stmt = $pdo->prepare("UPDATE pegawai SET $setStr WHERE id=?");
+            $stmt->execute([...array_map(fn($f)=>$data[$f], $requiredFields), $data['id']]);
+
+            if($stmt->rowCount()>0){
+            $stmt2 = $pdo->prepare("
+            SELECT p.id, p.nip, p.nama_lengkap, p.jenis_kelamin,
+               j.jabatan, s.skpd, u.unit_kerja,
+               p.nama_golongan, p.nama_pangkat, p.alamat_lengkap
+            FROM pegawai p
+            LEFT JOIN jabatan j ON p.jabatan = j.id
+            LEFT JOIN skpd s ON p.skpd = s.id
+            LEFT JOIN unit_kerja u ON p.unit_kerja = u.id
+            WHERE p.id = ?
+            ");
+            $stmt2->execute([$data['id']]);
+            $row = $stmt2->fetch();
+            echo json_encode(["success"=>true,"updated"=>$row]);
+            }else{
+            http_response_code(404);
+            echo json_encode(["error"=>"Data ID {$data['id']} tidak ditemukan"]);
+            }
+            break;
+
+        case 'DELETE':
+            if(!isset($data['id']) || trim($data['id'])===''){
+                http_response_code(400);
+                echo json_encode(["error"=>"Field 'id' wajib diisi untuk DELETE"]);
+                exit;
+            }
+            $stmt = $pdo->prepare("DELETE FROM pegawai WHERE id=?");
+            $stmt->execute([$data['id']]);
+            if($stmt->rowCount()>0){
+                echo json_encode(["success"=>true,"deleted"=>$data['id']]);
+            } else {
+                http_response_code(404);
+                echo json_encode(["error"=>"Data dengan ID '{$data['id']}' tidak ditemukan"]);
+            }
+            break;
     }
-
-    $id = $_GET['id'];
-    $jabatan = $_GET['jabatan'];
-
-    $stmt = $koneksi->prepare("UPDATE jabatan SET jabatan = ? WHERE id = ?");
-    $stmt->bind_param("si", $jabatan, $id);
-
-    if ($stmt->execute()) {
-        echo json_encode([
-            "message" => "Data berhasil diupdate",
-            "id" => $id,
-            "jabatan" => $jabatan
-        ]);
-    } else {
-        http_response_code(500);
-        echo json_encode(["error" => "Gagal update data", "detail" => $stmt->error]);
-    }
-    break;
-
-// -------------------- DELETE --------------------
-case 'DELETE':
-    // Ambil data dari body DELETE (raw JSON atau form-urlencoded)
-    $rawInput = file_get_contents("php://input");
-    $deleteData = json_decode($rawInput, true);
-
-    if (json_last_error() === JSON_ERROR_NONE && is_array($deleteData)) {
-        // Data dikirim dalam bentuk JSON
-        $id = $deleteData['id'] ?? null;
-    } else {
-        // Data bukan JSON → coba parse form-urlencoded
-        parse_str($rawInput, $deleteData);
-        $id = $deleteData['id'] ?? ($_POST['id'] ?? null);
-    }
-
-    if (!$id) {
-        echo json_encode(["error" => "ID pegawai wajib diisi"]);
-        exit;
-    }
-
-    $sql = "DELETE FROM pegawai WHERE id=?";
-    $stmt = $koneksi->prepare($sql);
-    $stmt->bind_param("i", $id);
-
-    if ($stmt->execute()) {
-        echo json_encode(["success" => true, "message" => "Data pegawai berhasil dihapus"]);
-    } else {
-        echo json_encode(["error" => "Gagal hapus: " . $stmt->error]);
-    }
-    break;
+} catch(PDOException $e){
+    http_response_code(500);
+    echo json_encode(["error"=>$e->getMessage()]);
 }
 ?>
